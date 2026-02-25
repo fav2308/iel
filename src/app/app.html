@@ -1,0 +1,168 @@
+<div class="app-shell">
+  <header class="app-header">
+    <div>
+      <h1>Ascensão • Portal da Mentora</h1>
+      <p>Roda da Vida Empreendedora 1-4-4-1</p>
+    </div>
+    <button type="button" class="ghost-btn" (click)="newSession()">Nova Sessão</button>
+  </header>
+
+  <main class="layout">
+    <section class="card controls">
+      <h3>1. Identificação</h3>
+      <input
+        type="text"
+        [value]="menteeName()"
+        (input)="updateMenteeName($event)"
+        placeholder="Nome da Mentorada"
+        aria-label="Nome da mentorada"
+      />
+
+      <h3>2. Avaliação</h3>
+      <div class="category-list">
+        @for (category of categories; track category.id) {
+          <div class="category-item">
+            <div class="category-row">
+              <span>{{ category.label }}</span>
+              <span [style.color]="category.color">{{ scores()[category.id] }}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              [value]="scores()[category.id]"
+              (input)="updateScore(category.id, $event)"
+              [attr.aria-label]="'Pontuação de ' + category.label"
+            />
+          </div>
+        }
+      </div>
+
+      <button type="button" class="primary-btn" [disabled]="loading()" (click)="handleSave()">
+        {{ loading() ? 'Processando...' : 'Salvar e Analisar Ciclo' }}
+      </button>
+
+      @if (status().text) {
+        <p
+          class="status-message"
+          [class.error]="status().type === 'error'"
+          [class.success]="status().type === 'success'"
+          [class.info]="status().type === 'info'"
+        >
+          {{ status().text }}
+        </p>
+      }
+    </section>
+
+    <section class="center-column">
+      <div class="card radar-card">
+        <h3>Visualização Estratégica</h3>
+
+        <svg width="400" height="400" viewBox="0 0 350 350" aria-label="Radar de avaliação estratégica">
+          @for (ring of [2, 4, 6, 8, 10]; track ring) {
+            <circle cx="175" cy="175" [attr.r]="(ring / 10) * 100" fill="none" stroke="#e2e8f0" stroke-width="1" />
+          }
+
+          @for (category of categories; track category.id; let i = $index) {
+            <line
+              x1="175"
+              y1="175"
+              [attr.x2]="axisLine(i).x"
+              [attr.y2]="axisLine(i).y"
+              stroke="#e2e8f0"
+              stroke-width="1"
+            />
+            <text
+              [attr.x]="axisLine(i).labelX"
+              [attr.y]="axisLine(i).labelY"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              class="axis-label"
+            >
+              {{ labelFirstWord(category.label) }}
+            </text>
+          }
+
+          @if (compareScores()) {
+            <polygon
+              [attr.points]="getPoints(compareScores())"
+              fill="rgba(148, 163, 184, 0.08)"
+              stroke="#94a3b8"
+              stroke-width="2"
+              stroke-dasharray="4"
+            />
+          }
+
+          <polygon
+            [attr.points]="getPoints(scores())"
+            fill="rgba(79, 70, 229, 0.15)"
+            stroke="#4f46e5"
+            stroke-width="3"
+            stroke-linejoin="round"
+          />
+
+          @for (category of categories; track category.id; let i = $index) {
+            <circle [attr.cx]="scorePoint(category, i).x" [attr.cy]="scorePoint(category, i).y" r="4" [attr.fill]="category.color" />
+            <rect
+              [attr.x]="scorePoint(category, i).noteX - 8"
+              [attr.y]="scorePoint(category, i).noteY - 6"
+              width="16"
+              height="12"
+              rx="4"
+              fill="white"
+              [attr.stroke]="category.color"
+              stroke-width="1"
+            />
+            <text
+              [attr.x]="scorePoint(category, i).noteX"
+              [attr.y]="scorePoint(category, i).noteY"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              class="point-note"
+              [attr.fill]="category.color"
+            >
+              {{ scores()[category.id] }}
+            </text>
+          }
+        </svg>
+
+        <div class="average-box">
+          <span>{{ average() }}</span>
+          <p>Média Global</p>
+        </div>
+      </div>
+
+      <div class="analysis-card">
+        <div class="analysis-header">
+          <h3>Parecer de Mentoria IA</h3>
+          @if (aiAnalysis()) {
+            <button type="button" class="ghost-invert" (click)="copyToClipboard()">Copiar</button>
+          }
+        </div>
+        <p>
+          {{ aiAnalysis() || 'Insira os dados para gerar a análise estratégica.' }}
+        </p>
+      </div>
+    </section>
+
+    <section class="card history-card">
+      <h3>Histórico de Evolução</h3>
+
+      <div class="history-list">
+        @for (item of history(); track item.id) {
+          <article class="history-item">
+            <div class="history-row">
+              <span class="name">{{ item.menteeName }}</span>
+              <span class="badge">{{ item.average }}</span>
+            </div>
+
+            <div class="history-actions">
+              <button type="button" class="secondary-btn" (click)="restoreSession(item)">Restaurar</button>
+              <button type="button" class="dark-btn" (click)="setComparison(item.scores)">Comparar</button>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  </main>
+</div>
