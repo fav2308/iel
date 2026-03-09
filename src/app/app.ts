@@ -1,12 +1,15 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   OnDestroy,
   OnInit,
+  ViewChild,
   computed,
   signal,
 } from '@angular/core';
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
+import type { jsPDF } from 'jspdf';
 import {
   getAuth,
   onAuthStateChanged,
@@ -84,12 +87,15 @@ function createInitialScores(): ScoreMap {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App implements OnInit, OnDestroy {
+  @ViewChild('radarChart') private readonly radarChart?: ElementRef<SVGSVGElement>;
+
   protected readonly categories = CATEGORIES;
   protected readonly user = signal<User | null>(null);
   protected readonly menteeName = signal('');
   protected readonly scores = signal<ScoreMap>(createInitialScores());
   protected readonly compareScores = signal<ScoreMap | null>(null);
   protected readonly loading = signal(false);
+  protected readonly pdfLoading = signal(false);
   protected readonly aiAnalysis = signal('');
   protected readonly history = signal<MentoriaRecord[]>([]);
   protected readonly status = signal<StatusMessage>({ type: '', text: '' });
@@ -228,6 +234,65 @@ export class App implements OnInit, OnDestroy {
       this.status.set({ type: 'success', text: 'Copiado para o clipboard!' });
     } catch {
       this.status.set({ type: 'error', text: 'Não foi possível copiar o texto.' });
+    }
+  }
+
+  protected async exportPdf(): Promise<void> {
+    if (!this.aiAnalysis().trim()) {
+      this.status.set({ type: 'error', text: 'Gere o parecer antes de exportar o PDF.' });
+      return;
+    }
+
+    this.pdfLoading.set(true);
+    this.status.set({ type: 'info', text: 'Montando PDF para impressão...' });
+
+    try {
+      const { jsPDF: JsPdfConstructor } = await import('jspdf');
+      const documentPdf = new JsPdfConstructor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const now = new Date();
+      const reportTitle = `Parecer de Mentoria - ${this.menteeName() || 'Mentorada'}`;
+
+      documentPdf.setFont('helvetica', 'bold');
+      documentPdf.setFontSize(16);
+      documentPdf.text(reportTitle, 14, 18);
+      documentPdf.setFont('helvetica', 'normal');
+      documentPdf.setFontSize(10);
+      documentPdf.text(`Data: ${now.toLocaleDateString('pt-BR')}`, 14, 24);
+      documentPdf.text(`Media global: ${this.average()}/10`, 14, 29);
+
+      const radarImage = await this.createRadarImage();
+      if (radarImage) {
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(12);
+        documentPdf.text('Grafico Radar', 14, 38);
+        documentPdf.addImage(radarImage, 'PNG', 14, 42, 85, 85);
+      }
+
+      this.drawScoreBars(documentPdf, 108, 44, 92, 80);
+
+      const analysisStartY = 138;
+      documentPdf.setFont('helvetica', 'bold');
+      documentPdf.setFontSize(12);
+      documentPdf.text('Parecer de Mentoria', 14, analysisStartY);
+
+      documentPdf.setFont('helvetica', 'normal');
+      documentPdf.setFontSize(10);
+      const wrappedAnalysis = documentPdf.splitTextToSize(this.aiAnalysis(), 182);
+      documentPdf.text(wrappedAnalysis, 14, analysisStartY + 6);
+
+      const fileDate = now.toISOString().slice(0, 10);
+      const safeName = (this.menteeName() || 'mentorada')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+      documentPdf.save(`parecer-mentoria-${safeName || 'mentorada'}-${fileDate}.pdf`);
+
+      this.status.set({ type: 'success', text: 'PDF gerado com sucesso!' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Nao foi possivel gerar o PDF.';
+      this.status.set({ type: 'error', text: message });
+    } finally {
+      this.pdfLoading.set(false);
     }
   }
 
@@ -408,6 +473,102 @@ export class App implements OnInit, OnDestroy {
     }
 
     throw new Error(`Gemini indisponível após fallback de modelos. Último erro: ${lastError}`);
+  }
+
+  private drawScoreBars(documentPdf: jsPDF, originX: number, originY: number, width: number, height: number): void {
+    const scores = this.scores();
+    const maxScore = 10;
+    const maxBarWidth = width - 28;
+    const rowHeight = height / this.categories.length;
+
+    documentPdf.setFont('helvetica', 'bold');
+    documentPdf.setFontSize(12);
+    documentPdf.text('Grafico de Pontuacao', originX, originY - 6);
+
+    this.categories.forEach((category, index) => {
+      const score = scores[category.id] ?? 0;
+      const shortLabel = this.labelFirstWord(category.label);
+      const lineY = originY + index * rowHeight;
+      const barWidth = (score / maxScore) * maxBarWidth;
+
+      documentPdf.setFont('helvetica', 'normal');
+      documentPdf.setFontSize(9);
+      documentPdf.setTextColor(30, 41, 59);
+      documentPdf.text(shortLabel, originX, lineY + 3);
+
+      documentPdf.setDrawColor(203, 213, 225);
+      documentPdf.setFillColor(241, 245, 249);
+      documentPdf.roundedRect(originX + 24, lineY - 1, maxBarWidth, 4, 1, 1, 'FD');
+
+      const [r, g, b] = this.hexToRgb(category.color);
+      documentPdf.setFillColor(r, g, b);
+      documentPdf.roundedRect(originX + 24, lineY - 1, barWidth, 4, 1, 1, 'F');
+
+      documentPdf.setFontSize(8);
+      documentPdf.text(`${score}/10`, originX + width - 4, lineY + 3, { align: 'right' });
+    });
+  }
+
+  private async createRadarImage(): Promise<string | null> {
+    const svgElement = this.radarChart?.nativeElement;
+    if (!svgElement) {
+      return null;
+    }
+
+    const viewBox = svgElement.viewBox.baseVal;
+    const width = Math.max(Math.round(viewBox.width || svgElement.clientWidth || 350), 300);
+    const height = Math.max(Math.round(viewBox.height || svgElement.clientHeight || 350), 300);
+
+    const serialized = new XMLSerializer().serializeToString(svgElement);
+    const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    try {
+      const image = await this.loadImage(svgUrl);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        return null;
+      }
+
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      return canvas.toDataURL('image/png');
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  }
+
+  private loadImage(source: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Nao foi possivel processar o grafico para o PDF.'));
+      image.src = source;
+    });
+  }
+
+  private hexToRgb(hexColor: string): [number, number, number] {
+    const normalized = hexColor.replace('#', '');
+    const isShortHex = normalized.length === 3;
+    const fullHex = isShortHex
+      ? normalized
+          .split('')
+          .map((character) => `${character}${character}`)
+          .join('')
+      : normalized;
+
+    const value = Number.parseInt(fullHex, 16);
+    if (Number.isNaN(value)) {
+      return [79, 70, 229];
+    }
+
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
   }
 
   private generateLocalAnalysis(): string {
