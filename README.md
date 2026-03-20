@@ -3,7 +3,7 @@
 Aplicação Angular para mentoria estratégica com:
 
 - avaliação da Roda da Vida Empreendedora (8 pilares);
-- geração de parecer por IA (Gemini) com fallback local;
+- geração de parecer por IA (Gemini) com fallback Groq e fallback local;
 - persistência e histórico de sessões no Firebase (Auth + Firestore);
 - visualização em radar e comparação de ciclos anteriores.
 
@@ -12,7 +12,7 @@ Aplicação Angular para mentoria estratégica com:
 - Angular 21 (standalone + signals)
 - TypeScript
 - Firebase Web SDK (`firebase/app`, `firebase/auth`, `firebase/firestore`)
-- Gemini API (via `fetch` no cliente)
+- Gemini API + Groq API (via `fetch` no cliente)
 
 ## Funcionalidades principais
 
@@ -21,7 +21,8 @@ Aplicação Angular para mentoria estratégica com:
 3. **Cálculo automático da média global**
 4. **Geração de análise estratégica**
 	 - prioridade: Gemini
-	 - fallback: análise local (quando Gemini falha/indisponível)
+	 - fallback 1: Groq (quando Gemini falha/indisponível)
+	 - fallback 2: análise local (quando Gemini e Groq falham/indisponíveis)
 5. **Salvamento de sessão no Firestore**
 6. **Histórico em tempo real** com restauração e comparação
 7. **Cópia do parecer para clipboard**
@@ -36,7 +37,7 @@ O fluxo principal está concentrado em `src/app/app.ts`:
 	- autentica usuário (token custom ou anônimo).
 - Execução:
 	- usuário preenche dados e aciona salvar;
-	- sistema gera análise (Gemini ou local);
+	- sistema gera análise (Gemini, Groq ou local);
 	- persiste documento no Firestore;
 	- `onSnapshot` atualiza histórico em tempo real.
 
@@ -99,6 +100,7 @@ NG_APP_FIREBASE_CONFIG={"apiKey":"SUA_API_KEY","authDomain":"SEU_PROJETO.firebas
 NG_APP_APP_ID=iel-local
 NG_APP_INITIAL_AUTH_TOKEN=
 NG_APP_GEMINI_API_KEY=
+NG_APP_GROQ_API_KEY=
 ```
 
 ### Descrição
@@ -107,6 +109,7 @@ NG_APP_GEMINI_API_KEY=
 - `NG_APP_APP_ID`: namespace lógico usado no caminho dos documentos
 - `NG_APP_INITIAL_AUTH_TOKEN`: opcional, para autenticação com token custom
 - `NG_APP_GEMINI_API_KEY`: chave para geração de análise com Gemini
+- `NG_APP_GROQ_API_KEY`: chave para fallback de análise via Groq
 
 > Após alterar `.env`, reinicie o servidor (`ng serve`).
 
@@ -137,7 +140,7 @@ A aplicação pode ser hospedada em hosting estático (Firebase Hosting, Vercel,
 
 ### Segurança importante
 
-Atualmente a chamada ao Gemini é feita no cliente, então a chave `NG_APP_GEMINI_API_KEY` pode ser exposta no bundle. Para produção, o recomendado é mover a chamada para backend/Cloud Function e manter a chave apenas no servidor.
+Atualmente as chamadas de IA (Gemini e Groq) são feitas no cliente, então as chaves `NG_APP_GEMINI_API_KEY` e `NG_APP_GROQ_API_KEY` podem ser expostas no bundle. Para produção, o recomendado é mover as chamadas para backend/Cloud Function e manter as chaves apenas no servidor.
 
 ## Estrutura resumida
 

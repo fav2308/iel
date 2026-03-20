@@ -34,6 +34,7 @@ declare const __firebase_config: string | undefined;
 declare const __app_id: string | undefined;
 declare const __initial_auth_token: string | undefined;
 declare const __gemini_api_key: string | undefined;
+declare const __groq_api_key: string | undefined;
 
 type StatusType = 'error' | 'success' | 'info' | '';
 
@@ -107,7 +108,9 @@ export class App implements OnInit, OnDestroy {
 
   private readonly appId = this.readRuntimeString('__app_id') || environment.appId || 'default-app-id';
   private readonly apiKey = this.readRuntimeString('__gemini_api_key') || environment.geminiApiKey || '';
+  private readonly groqApiKey = this.readRuntimeString('__groq_api_key') || environment.groqApiKey || '';
   private readonly geminiModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
+  private readonly groqModels = ['llama-3.1-8b-instant', 'llama3-8b-8192'];
   private readonly firebaseConfig = this.readFirebaseConfig();
   private readonly firebaseApp: FirebaseApp | null = this.firebaseConfig ? initializeApp(this.firebaseConfig) : null;
   private readonly auth: Auth | null = this.firebaseApp ? getAuth(this.firebaseApp) : null;
@@ -170,13 +173,23 @@ export class App implements OnInit, OnDestroy {
 
       try {
         analysis = await this.callGemini(prompt);
-      } catch (error) {
-        analysis = this.generateLocalAnalysis();
-        const errorMessage = error instanceof Error ? error.message : 'Falha ao consultar Gemini.';
-        this.status.set({
-          type: 'info',
-          text: `Gemini indisponível no momento. Relatório local gerado. Motivo: ${errorMessage}`,
-        });
+      } catch (geminiError) {
+        try {
+          analysis = await this.callGroq(prompt);
+          const geminiMessage = geminiError instanceof Error ? geminiError.message : 'Falha ao consultar Gemini.';
+          this.status.set({
+            type: 'info',
+            text: `Gemini indisponível no momento. Relatório gerado via Groq. Motivo: ${geminiMessage}`,
+          });
+        } catch (groqError) {
+          analysis = this.generateLocalAnalysis();
+          const geminiMessage = geminiError instanceof Error ? geminiError.message : 'Falha ao consultar Gemini.';
+          const groqMessage = groqError instanceof Error ? groqError.message : 'Falha ao consultar Groq.';
+          this.status.set({
+            type: 'info',
+            text: `Gemini e Groq indisponíveis. Relatório local gerado. Motivos: Gemini (${geminiMessage}) | Groq (${groqMessage})`,
+          });
+        }
       }
 
       this.aiAnalysis.set(analysis);
@@ -198,6 +211,8 @@ export class App implements OnInit, OnDestroy {
           this.status.set({ type: 'success', text: 'Relatório gerado com sucesso! (histórico não salvo)' });
         }
       }
+
+      await this.exportPdf();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao processar análise.';
       this.status.set({ type: 'error', text: message });
@@ -475,6 +490,106 @@ export class App implements OnInit, OnDestroy {
     throw new Error(`Gemini indisponível após fallback de modelos. Último erro: ${lastError}`);
   }
 
+  private async callGroq(prompt: string): Promise<string> {
+    if (!this.groqApiKey.trim()) {
+      throw new Error('Groq não configurado. Defina NG_APP_GROQ_API_KEY no .env.');
+    }
+
+    const fetchWithRetry = async (model: string, retries = 2, delay = 1000): Promise<string> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      let response: Response;
+
+      try {
+        response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.groqApiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.3,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Você é uma mentora estratégica para mulheres. Use a bibliografia oficial (Sinek, Brown, etc). Forneça um diagnóstico de alto impacto.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+
+        const isAbort = error instanceof DOMException && error.name === 'AbortError';
+        if (retries > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          return fetchWithRetry(model, retries - 1, delay * 2);
+        }
+
+        if (isAbort) {
+          throw new Error('Tempo esgotado ao consultar Groq. Verifique internet/chave e tente novamente.');
+        }
+
+        throw new Error('Falha de rede ao consultar Groq.');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        const compactError = errorBody.length > 180 ? `${errorBody.slice(0, 180)}...` : errorBody;
+
+        if (retries <= 0) {
+          throw new Error(`[${response.status}] ${compactError || 'sem detalhes'}`);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return fetchWithRetry(model, retries - 1, delay * 2);
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{
+          message?: {
+            content?: string;
+          };
+        }>;
+      };
+
+      const analysis = data.choices?.[0]?.message?.content;
+      if (!analysis?.trim()) {
+        throw new Error('Groq respondeu sem conteúdo de análise.');
+      }
+
+      return analysis;
+    };
+
+    let lastError = 'Sem detalhes';
+
+    for (const model of this.groqModels) {
+      try {
+        return await fetchWithRetry(model);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        lastError = `${model}: ${message}`;
+
+        const fallbackAllowed = message.includes('[503]') || message.includes('[404]') || message.includes('[429]');
+        if (!fallbackAllowed) {
+          throw new Error(`Falha Groq (${model}): ${message}`);
+        }
+      }
+    }
+
+    throw new Error(`Groq indisponível após fallback de modelos. Último erro: ${lastError}`);
+  }
+
   private drawScoreBars(documentPdf: jsPDF, originX: number, originY: number, width: number, height: number): void {
     const scores = this.scores();
     const maxScore = 10;
@@ -617,7 +732,9 @@ export class App implements OnInit, OnDestroy {
     return null;
   }
 
-  private readRuntimeString(key: '__firebase_config' | '__app_id' | '__initial_auth_token' | '__gemini_api_key'): string {
+  private readRuntimeString(
+    key: '__firebase_config' | '__app_id' | '__initial_auth_token' | '__gemini_api_key' | '__groq_api_key',
+  ): string {
     const runtimeValue = (globalThis as Record<string, unknown>)[key];
     return typeof runtimeValue === 'string' ? runtimeValue : '';
   }
