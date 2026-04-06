@@ -39,19 +39,8 @@
       </div>
 
       <button type="button" class="primary-btn" [disabled]="loading()" (click)="handleSave()">
-        {{ loading() ? 'Processando...' : 'Analisar ciclo' }}
+        {{ loading() ? 'Gerando relatório...' : 'Gerar relatório' }}
       </button>
-
-      @if (status().text) {
-        <p
-          class="status-message"
-          [class.error]="status().type === 'error'"
-          [class.success]="status().type === 'success'"
-          [class.info]="status().type === 'info'"
-        >
-          {{ status().text }}
-        </p>
-      }
     </section>
 
     <section class="center-column">

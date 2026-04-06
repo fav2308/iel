@@ -5,7 +5,6 @@ export interface AppEnvironment {
   appId: string;
   initialAuthToken: string;
   geminiApiKey: string;
-  groqApiKey: string;
 }
 
 function readEnv(key: string): string {
@@ -32,6 +31,5 @@ export const environment: AppEnvironment = {
   firebaseConfig: readFirebaseConfigFromEnv(),
   appId: readEnv('NG_APP_APP_ID') || 'default-app-id',
   initialAuthToken: readEnv('NG_APP_INITIAL_AUTH_TOKEN'),
-  geminiApiKey: readEnv('NG_APP_GEMINI_API_KEY') || 'AIzaSyB9JaX2v_Rb3YxTiRjZrsFKlA5iMOMWThM',
-  groqApiKey: readEnv('NG_APP_GROQ_API_KEY'),
+  geminiApiKey: readEnv('NG_APP_GEMINI_API_KEY'),
 };

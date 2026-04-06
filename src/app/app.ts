@@ -34,7 +34,6 @@ declare const __firebase_config: string | undefined;
 declare const __app_id: string | undefined;
 declare const __initial_auth_token: string | undefined;
 declare const __gemini_api_key: string | undefined;
-declare const __groq_api_key: string | undefined;
 
 type StatusType = 'error' | 'success' | 'info' | '';
 
@@ -108,9 +107,7 @@ export class App implements OnInit, OnDestroy {
 
   private readonly appId = this.readRuntimeString('__app_id') || environment.appId || 'default-app-id';
   private readonly apiKey = this.readRuntimeString('__gemini_api_key') || environment.geminiApiKey || '';
-  private readonly groqApiKey = this.readRuntimeString('__groq_api_key') || environment.groqApiKey || '';
   private readonly geminiModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
-  private readonly groqModels = ['llama-3.1-8b-instant', 'llama3-8b-8192'];
   private readonly firebaseConfig = this.readFirebaseConfig();
   private readonly firebaseApp: FirebaseApp | null = this.firebaseConfig ? initializeApp(this.firebaseConfig) : null;
   private readonly auth: Auth | null = this.firebaseApp ? getAuth(this.firebaseApp) : null;
@@ -156,63 +153,55 @@ export class App implements OnInit, OnDestroy {
   }
 
   protected async handleSave(): Promise<void> {
-    if (!this.menteeName().trim()) {
+    const menteeName = this.menteeName().trim();
+
+    if (!menteeName) {
       this.status.set({ type: 'error', text: 'Insira o nome da mentorada.' });
       return;
     }
 
     this.loading.set(true);
-    this.status.set({ type: 'info', text: 'Gerando inteligência estratégica...' });
 
-    const prompt = `Analise os scores da Roda da Vida de ${this.menteeName()} baseada nos pilares: ${JSON.stringify(
+    const localAnalysis = this.generateLocalAnalysis();
+    this.aiAnalysis.set(localAnalysis);
+    this.status.set({ type: 'info', text: 'Prévia pronta. Refinando o relatório com IA...' });
+
+    const prompt = `Analise os scores da Roda da Vida de ${menteeName} baseada nos pilares: ${JSON.stringify(
       this.scores(),
     )}. Identifique a alavanca de crescimento principal.`;
 
     try {
-      let analysis = '';
+      let finalAnalysis = localAnalysis;
+      let usedLocalFallback = false;
+      let fallbackReason = '';
 
       try {
-        analysis = await this.callGemini(prompt);
-      } catch (geminiError) {
-        try {
-          analysis = await this.callGroq(prompt);
-          const geminiMessage = geminiError instanceof Error ? geminiError.message : 'Falha ao consultar Gemini.';
-          this.status.set({
-            type: 'info',
-            text: `Gemini indisponível no momento. Relatório gerado via Groq. Motivo: ${geminiMessage}`,
-          });
-        } catch (groqError) {
-          analysis = this.generateLocalAnalysis();
-          const geminiMessage = geminiError instanceof Error ? geminiError.message : 'Falha ao consultar Gemini.';
-          const groqMessage = groqError instanceof Error ? groqError.message : 'Falha ao consultar Groq.';
-          this.status.set({
-            type: 'info',
-            text: `Gemini e Groq indisponíveis. Relatório local gerado. Motivos: Gemini (${geminiMessage}) | Groq (${groqMessage})`,
-          });
-        }
+        finalAnalysis = await this.generateRemoteAnalysis(prompt);
+      } catch (remoteError) {
+        usedLocalFallback = true;
+        fallbackReason = remoteError instanceof Error ? remoteError.message : 'A IA não respondeu a tempo.';
       }
 
-      this.aiAnalysis.set(analysis);
+      this.aiAnalysis.set(finalAnalysis);
 
       if (this.db) {
         await addDoc(collection(this.db, 'artifacts', this.appId, 'public', 'data', 'mentorias'), {
-          menteeName: this.menteeName(),
+          menteeName,
           scores: this.scores(),
-          analysis,
+          analysis: finalAnalysis,
           average: this.average(),
           createdAt: serverTimestamp(),
         });
-
-        if (this.status().type !== 'info') {
-          this.status.set({ type: 'success', text: 'Relatório gerado e sessão salva com sucesso!' });
-        }
-      } else {
-        if (this.status().type !== 'info') {
-          this.status.set({ type: 'success', text: 'Relatório gerado com sucesso! (histórico não salvo)' });
-        }
       }
 
-      await this.exportPdf();
+      this.status.set({
+        type: usedLocalFallback ? 'info' : 'success',
+        text: usedLocalFallback
+          ? `Prévia exibida sem demora. Mantive a versão local porque a IA principal não respondeu (${fallbackReason}).`
+          : this.db
+            ? 'Relatório gerado com sucesso! Se quiser, clique em "Gerar PDF" para baixar.'
+            : 'Relatório gerado com sucesso! (histórico não salvo; clique em "Gerar PDF" se desejar baixar).',
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao processar análise.';
       this.status.set({ type: 'error', text: message });
@@ -397,15 +386,23 @@ export class App implements OnInit, OnDestroy {
     );
   }
 
+  private async generateRemoteAnalysis(prompt: string): Promise<string> {
+    if (this.apiKey.trim()) {
+      return this.callGemini(prompt);
+    }
+
+    throw new Error('Gemini não configurado no .env. Defina NG_APP_GEMINI_API_KEY.');
+  }
+
   private async callGemini(prompt: string): Promise<string> {
     if (!this.apiKey.trim()) {
       throw new Error('Gemini não configurado. Defina NG_APP_GEMINI_API_KEY no .env.');
     }
 
-    const fetchWithRetry = async (model: string, retries = 2, delay = 1000): Promise<string> => {
+    const fetchWithRetry = async (model: string, retries = 0, delay = 600): Promise<string> => {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       let response: Response;
 
@@ -490,105 +487,6 @@ export class App implements OnInit, OnDestroy {
     throw new Error(`Gemini indisponível após fallback de modelos. Último erro: ${lastError}`);
   }
 
-  private async callGroq(prompt: string): Promise<string> {
-    if (!this.groqApiKey.trim()) {
-      throw new Error('Groq não configurado. Defina NG_APP_GROQ_API_KEY no .env.');
-    }
-
-    const fetchWithRetry = async (model: string, retries = 2, delay = 1000): Promise<string> => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      let response: Response;
-
-      try {
-        response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.3,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'Você é uma mentora estratégica para mulheres. Use a bibliografia oficial (Sinek, Brown, etc). Forneça um diagnóstico de alto impacto.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        clearTimeout(timeoutId);
-
-        const isAbort = error instanceof DOMException && error.name === 'AbortError';
-        if (retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          return fetchWithRetry(model, retries - 1, delay * 2);
-        }
-
-        if (isAbort) {
-          throw new Error('Tempo esgotado ao consultar Groq. Verifique internet/chave e tente novamente.');
-        }
-
-        throw new Error('Falha de rede ao consultar Groq.');
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        const compactError = errorBody.length > 180 ? `${errorBody.slice(0, 180)}...` : errorBody;
-
-        if (retries <= 0) {
-          throw new Error(`[${response.status}] ${compactError || 'sem detalhes'}`);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return fetchWithRetry(model, retries - 1, delay * 2);
-      }
-
-      const data = (await response.json()) as {
-        choices?: Array<{
-          message?: {
-            content?: string;
-          };
-        }>;
-      };
-
-      const analysis = data.choices?.[0]?.message?.content;
-      if (!analysis?.trim()) {
-        throw new Error('Groq respondeu sem conteúdo de análise.');
-      }
-
-      return analysis;
-    };
-
-    let lastError = 'Sem detalhes';
-
-    for (const model of this.groqModels) {
-      try {
-        return await fetchWithRetry(model);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        lastError = `${model}: ${message}`;
-
-        const fallbackAllowed = message.includes('[503]') || message.includes('[404]') || message.includes('[429]');
-        if (!fallbackAllowed) {
-          throw new Error(`Falha Groq (${model}): ${message}`);
-        }
-      }
-    }
-
-    throw new Error(`Groq indisponível após fallback de modelos. Último erro: ${lastError}`);
-  }
 
   private drawScoreBars(documentPdf: jsPDF, originX: number, originY: number, width: number, height: number): void {
     const scores = this.scores();
@@ -733,7 +631,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   private readRuntimeString(
-    key: '__firebase_config' | '__app_id' | '__initial_auth_token' | '__gemini_api_key' | '__groq_api_key',
+    key: '__firebase_config' | '__app_id' | '__initial_auth_token' | '__gemini_api_key',
   ): string {
     const runtimeValue = (globalThis as Record<string, unknown>)[key];
     return typeof runtimeValue === 'string' ? runtimeValue : '';
