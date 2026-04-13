@@ -2,37 +2,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  OnDestroy,
   OnInit,
   ViewChild,
   computed,
   signal,
 } from '@angular/core';
-import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
 import type { jsPDF } from 'jspdf';
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInAnonymously,
-  signInWithCustomToken,
-  type Auth,
-  type User,
-} from 'firebase/auth';
-import {
-  addDoc,
-  collection,
-  getFirestore,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  type Firestore,
-  type Unsubscribe,
-} from 'firebase/firestore';
 import { environment } from '../environments/environment';
-
-declare const __firebase_config: string | undefined;
 declare const __app_id: string | undefined;
-declare const __initial_auth_token: string | undefined;
 declare const __gemini_api_key: string | undefined;
 
 type StatusType = 'error' | 'success' | 'info' | '';
@@ -46,16 +23,7 @@ interface Category {
 
 type ScoreMap = Record<string, number>;
 
-interface MentoriaRecord {
-  id: string;
-  menteeName: string;
-  scores: ScoreMap;
-  analysis: string;
-  average: string;
-  createdAt?: {
-    seconds?: number;
-  };
-}
+
 
 interface StatusMessage {
   type: StatusType;
@@ -86,18 +54,16 @@ function createInitialScores(): ScoreMap {
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class App implements OnInit, OnDestroy {
+export class App implements OnInit {
   @ViewChild('radarChart') private readonly radarChart?: ElementRef<SVGSVGElement>;
 
   protected readonly categories = CATEGORIES;
-  protected readonly user = signal<User | null>(null);
   protected readonly menteeName = signal('');
   protected readonly scores = signal<ScoreMap>(createInitialScores());
   protected readonly compareScores = signal<ScoreMap | null>(null);
   protected readonly loading = signal(false);
   protected readonly pdfLoading = signal(false);
   protected readonly aiAnalysis = signal('');
-  protected readonly history = signal<MentoriaRecord[]>([]);
   protected readonly status = signal<StatusMessage>({ type: '', text: '' });
   protected readonly average = computed(() => {
     const values = Object.values(this.scores());
@@ -108,34 +74,9 @@ export class App implements OnInit, OnDestroy {
   private readonly appId = this.readRuntimeString('__app_id') || environment.appId || 'default-app-id';
   private readonly apiKey = this.readRuntimeString('__gemini_api_key') || environment.geminiApiKey || '';
   private readonly geminiModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
-  private readonly firebaseConfig = this.readFirebaseConfig();
-  private readonly firebaseApp: FirebaseApp | null = this.firebaseConfig ? initializeApp(this.firebaseConfig) : null;
-  private readonly auth: Auth | null = this.firebaseApp ? getAuth(this.firebaseApp) : null;
-  private readonly db: Firestore | null = this.firebaseApp ? getFirestore(this.firebaseApp) : null;
-
-  private authUnsubscribe: Unsubscribe | null = null;
-  private historyUnsubscribe: Unsubscribe | null = null;
 
   async ngOnInit(): Promise<void> {
-    if (!this.auth || !this.db) {
-      this.status.set({
-        type: 'info',
-        text: 'Firebase não configurado: relatório de IA funciona, mas o histórico não será salvo.',
-      });
-      return;
-    }
-
-    await this.initializeAuth();
-
-    this.authUnsubscribe = onAuthStateChanged(this.auth, (currentUser) => {
-      this.user.set(currentUser);
-      this.subscribeHistory();
-    });
-  }
-
-  ngOnDestroy(): void {
-    this.authUnsubscribe?.();
-    this.historyUnsubscribe?.();
+    // Inicialização do aplicativo concluída
   }
 
   protected updateMenteeName(event: Event): void {
@@ -184,23 +125,11 @@ export class App implements OnInit, OnDestroy {
 
       this.aiAnalysis.set(finalAnalysis);
 
-      if (this.db) {
-        await addDoc(collection(this.db, 'artifacts', this.appId, 'public', 'data', 'mentorias'), {
-          menteeName,
-          scores: this.scores(),
-          analysis: finalAnalysis,
-          average: this.average(),
-          createdAt: serverTimestamp(),
-        });
-      }
-
       this.status.set({
         type: usedLocalFallback ? 'info' : 'success',
         text: usedLocalFallback
           ? `Prévia exibida sem demora. Mantive a versão local porque a IA principal não respondeu (${fallbackReason}).`
-          : this.db
-            ? 'Relatório gerado com sucesso! Se quiser, clique em "Gerar PDF" para baixar.'
-            : 'Relatório gerado com sucesso! (histórico não salvo; clique em "Gerar PDF" se desejar baixar).',
+          : 'Relatório gerado com sucesso! Clique em "Gerar PDF" para baixar.',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao processar análise.';
@@ -216,14 +145,6 @@ export class App implements OnInit, OnDestroy {
     this.aiAnalysis.set('');
     this.menteeName.set('');
     this.status.set({ type: '', text: '' });
-  }
-
-  protected restoreSession(item: MentoriaRecord): void {
-    this.scores.set(item.scores);
-    this.menteeName.set(item.menteeName);
-    this.aiAnalysis.set(item.analysis);
-    this.compareScores.set(null);
-    this.status.set({ type: 'info', text: 'Sessão restaurada para edição.' });
   }
 
   protected setComparison(scores: ScoreMap): void {
@@ -349,42 +270,7 @@ export class App implements OnInit, OnDestroy {
     return label.split(' ')[0] ?? label;
   }
 
-  private async initializeAuth(): Promise<void> {
-    if (!this.auth) {
-      return;
-    }
 
-    const initialAuthToken = this.readRuntimeString('__initial_auth_token') || environment.initialAuthToken;
-
-    if (initialAuthToken) {
-      await signInWithCustomToken(this.auth, initialAuthToken);
-      return;
-    }
-
-    await signInAnonymously(this.auth);
-  }
-
-  private subscribeHistory(): void {
-    if (!this.db || !this.user()) {
-      return;
-    }
-
-    this.historyUnsubscribe?.();
-
-    const historyQuery = query(collection(this.db, 'artifacts', this.appId, 'public', 'data', 'mentorias'));
-
-    this.historyUnsubscribe = onSnapshot(
-      historyQuery,
-      (snapshot) => {
-        const data = snapshot.docs
-          .map((documentSnapshot) => ({ id: documentSnapshot.id, ...(documentSnapshot.data() as Omit<MentoriaRecord, 'id'>) }))
-          .sort((firstItem, secondItem) => (secondItem.createdAt?.seconds ?? 0) - (firstItem.createdAt?.seconds ?? 0));
-
-        this.history.set(data);
-      },
-      () => this.status.set({ type: 'error', text: 'Erro ao carregar histórico.' }),
-    );
-  }
 
   private async generateRemoteAnalysis(prompt: string): Promise<string> {
     if (this.apiKey.trim()) {
@@ -612,27 +498,7 @@ export class App implements OnInit, OnDestroy {
     ].join('\n\n');
   }
 
-  private readFirebaseConfig(): FirebaseOptions | null {
-    try {
-      const runtimeConfig = this.readRuntimeString('__firebase_config');
-
-      if (runtimeConfig) {
-        return JSON.parse(runtimeConfig) as FirebaseOptions;
-      }
-
-      if (environment.firebaseConfig) {
-        return environment.firebaseConfig;
-      }
-    } catch {
-      this.status.set({ type: 'error', text: 'Configuração __firebase_config inválida.' });
-    }
-
-    return null;
-  }
-
-  private readRuntimeString(
-    key: '__firebase_config' | '__app_id' | '__initial_auth_token' | '__gemini_api_key',
-  ): string {
+  private readRuntimeString(key: '__app_id' | '__gemini_api_key'): string {
     const runtimeValue = (globalThis as Record<string, unknown>)[key];
     return typeof runtimeValue === 'string' ? runtimeValue : '';
   }

@@ -1,7 +1,7 @@
 <div class="app-shell">
   <header class="app-header">
     <div>
-      <h1>Ascensão • Portal da Mentora</h1>
+      <h1>Ascensão • Portal da Mentorada</h1>
       <p>Roda da Vida Empreendedora 1-4-4-1</p>
     </div>
     <button type="button" class="ghost-btn" (click)="newSession()">Nova Sessão</button>
@@ -142,26 +142,6 @@
         <p>
           {{ aiAnalysis() || 'Insira os dados para gerar a análise estratégica.' }}
         </p>
-      </div>
-    </section>
-
-    <section class="card history-card">
-      <h3>Histórico de Evolução</h3>
-
-      <div class="history-list">
-        @for (item of history(); track item.id) {
-          <article class="history-item">
-            <div class="history-row">
-              <span class="name">{{ item.menteeName }}</span>
-              <span class="badge">{{ item.average }}</span>
-            </div>
-
-            <div class="history-actions">
-              <button type="button" class="secondary-btn" (click)="restoreSession(item)">Restaurar</button>
-              <button type="button" class="dark-btn" (click)="setComparison(item.scores)">Comparar</button>
-            </div>
-          </article>
-        }
       </div>
     </section>
   </main>
