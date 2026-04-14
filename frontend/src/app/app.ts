@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  OnInit,
   ViewChild,
   computed,
   signal,
@@ -10,7 +9,6 @@ import {
 import type { jsPDF } from 'jspdf';
 import { environment } from '../environments/environment';
 declare const __app_id: string | undefined;
-declare const __gemini_api_key: string | undefined;
 
 type StatusType = 'error' | 'success' | 'info' | '';
 
@@ -54,7 +52,7 @@ function createInitialScores(): ScoreMap {
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class App implements OnInit {
+export class App {
   @ViewChild('radarChart') private readonly radarChart?: ElementRef<SVGSVGElement>;
 
   protected readonly categories = CATEGORIES;
@@ -72,12 +70,7 @@ export class App implements OnInit {
   });
 
   private readonly appId = this.readRuntimeString('__app_id') || environment.appId || 'default-app-id';
-  private readonly apiKey = this.readRuntimeString('__gemini_api_key') || environment.geminiApiKey || '';
-  private readonly geminiModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
-
-  async ngOnInit(): Promise<void> {
-    // Inicialização do aplicativo concluída
-  }
+  private readonly backendBaseUrl = 'http://127.0.0.1:8000';
 
   protected updateMenteeName(event: Event): void {
     const target = event.target as HTMLInputElement;
@@ -107,17 +100,13 @@ export class App implements OnInit {
     this.aiAnalysis.set(localAnalysis);
     this.status.set({ type: 'info', text: 'Prévia pronta. Refinando o relatório com IA...' });
 
-    const prompt = `Analise os scores da Roda da Vida de ${menteeName} baseada nos pilares: ${JSON.stringify(
-      this.scores(),
-    )}. Identifique a alavanca de crescimento principal.`;
-
     try {
       let finalAnalysis = localAnalysis;
       let usedLocalFallback = false;
       let fallbackReason = '';
 
       try {
-        finalAnalysis = await this.generateRemoteAnalysis(prompt);
+        finalAnalysis = await this.generateRemoteAnalysis();
       } catch (remoteError) {
         usedLocalFallback = true;
         fallbackReason = remoteError instanceof Error ? remoteError.message : 'A IA não respondeu a tempo.';
@@ -272,105 +261,62 @@ export class App implements OnInit {
 
 
 
-  private async generateRemoteAnalysis(prompt: string): Promise<string> {
-    if (this.apiKey.trim()) {
-      return this.callGemini(prompt);
-    }
-
-    throw new Error('Gemini não configurado no .env. Defina NG_APP_GEMINI_API_KEY.');
+  private async generateRemoteAnalysis(): Promise<string> {
+    return this.callBackend();
   }
 
-  private async callGemini(prompt: string): Promise<string> {
-    if (!this.apiKey.trim()) {
-      throw new Error('Gemini não configurado. Defina NG_APP_GEMINI_API_KEY no .env.');
+  private async callBackend(): Promise<string> {
+    let response: Response;
+
+    try {
+      response = await fetch(`${this.backendBaseUrl}/api/gemini/evaluate`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mentee_name: this.menteeName().trim(),
+          scores: this.scores(),
+        }),
+      });
+    } catch {
+      throw new Error('Falha de rede ao consultar o backend Laravel.');
     }
 
-    const fetchWithRetry = async (model: string, retries = 0, delay = 600): Promise<string> => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const responseText = await response.text();
+    const responseData = this.parseBackendResponse(responseText);
 
-      let response: Response;
-
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            systemInstruction: {
-              parts: [
-                {
-                  text: 'Você é uma mentora estratégica para mulheres. Use a bibliografia oficial (Sinek, Brown, etc). Forneça um diagnóstico de alto impacto.',
-                },
-              ],
-            },
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        clearTimeout(timeoutId);
-
-        const isAbort = error instanceof DOMException && error.name === 'AbortError';
-        if (retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          return fetchWithRetry(model, retries - 1, delay * 2);
-        }
-
-        if (isAbort) {
-          throw new Error('Tempo esgotado ao consultar Gemini. Verifique internet/chave e tente novamente.');
-        }
-
-        throw new Error('Falha de rede ao consultar Gemini.');
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        const compactError = errorBody.length > 180 ? `${errorBody.slice(0, 180)}...` : errorBody;
-
-        if (retries <= 0) {
-          throw new Error(`[${response.status}] ${compactError || 'sem detalhes'}`);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return fetchWithRetry(model, retries - 1, delay * 2);
-      }
-
-      const data = (await response.json()) as {
-        candidates?: Array<{
-          content?: {
-            parts?: Array<{ text?: string }>;
-          };
-        }>;
-      };
-
-      const analysis = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!analysis?.trim()) {
-        throw new Error('Gemini respondeu sem conteúdo de análise.');
-      }
-
-      return analysis;
-    };
-
-    let lastError = 'Sem detalhes';
-
-    for (const model of this.geminiModels) {
-      try {
-        return await fetchWithRetry(model);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        lastError = `${model}: ${message}`;
-
-        const fallbackAllowed = message.includes('[503]') || message.includes('[404]') || message.includes('[429]');
-        if (!fallbackAllowed) {
-          throw new Error(`Falha Gemini (${model}): ${message}`);
-        }
-      }
+    if (!response.ok) {
+      const message = responseData.message || responseText || 'Falha ao consultar o backend Laravel.';
+      throw new Error(typeof message === 'string' ? message : 'Falha ao consultar o backend Laravel.');
     }
 
-    throw new Error(`Gemini indisponível após fallback de modelos. Último erro: ${lastError}`);
+    const analysis = responseData.analysis;
+
+    if (!analysis?.trim()) {
+      throw new Error('Backend respondeu sem conteúdo de análise.');
+    }
+
+    try {
+      JSON.parse(analysis);
+    } catch {
+      throw new Error('Backend retornou análise sem JSON válido.');
+    }
+
+    return analysis;
+  }
+
+  private parseBackendResponse(responseText: string): { analysis?: string; message?: string; details?: unknown } {
+    if (!responseText.trim()) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(responseText) as { analysis?: string; message?: string; details?: unknown };
+    } catch {
+      return { message: responseText };
+    }
   }
 
 
@@ -457,9 +403,9 @@ export class App implements OnInit {
     const isShortHex = normalized.length === 3;
     const fullHex = isShortHex
       ? normalized
-          .split('')
-          .map((character) => `${character}${character}`)
-          .join('')
+        .split('')
+        .map((character) => `${character}${character}`)
+        .join('')
       : normalized;
 
     const value = Number.parseInt(fullHex, 16);
@@ -498,7 +444,7 @@ export class App implements OnInit {
     ].join('\n\n');
   }
 
-  private readRuntimeString(key: '__app_id' | '__gemini_api_key'): string {
+  private readRuntimeString(key: '__app_id'): string {
     const runtimeValue = (globalThis as Record<string, unknown>)[key];
     return typeof runtimeValue === 'string' ? runtimeValue : '';
   }
