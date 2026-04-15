@@ -38,6 +38,9 @@
         }
       </div>
 
+      <div *ngIf="status().text" class="status-message" [ngClass]="status().type">
+        {{ status().text }}
+      </div>
       <button type="button" class="primary-btn" [disabled]="loading()" (click)="handleSave()">
         {{ loading() ? 'Gerando relatório...' : 'Gerar relatório' }}
       </button>
@@ -142,13 +145,18 @@
         <ng-container *ngIf="aiParsed()">
           <div *ngIf="aiParsed().anamnese">
             <h4>Anamnese</h4>
-            <p>{{ aiParsed().anamnese }}</p>
+            <blockquote class="anamnese-bloco">
+              <div *ngFor="let frase of aiParsed().anamnese.split(/(?<=[.!?])\s+/)">
+                {{ frase }}
+              </div>
+            </blockquote>
           </div>
           <div *ngIf="aiParsed().comentarios_pilares">
             <h4>Comentários por Pilar</h4>
-            <ul>
-              <li *ngFor="let key of Object.keys(aiParsed().comentarios_pilares)">
-                <b>{{ key }}:</b> {{ aiParsed().comentarios_pilares[key] }}
+            <ul class="comentarios-pilares-lista">
+              <li *ngFor="let key of objectKeys(aiParsed().comentarios_pilares)">
+                <span class="pilar-nome">{{ key }}:</span>
+                <span class="pilar-comentario">{{ aiParsed().comentarios_pilares[key] }}</span>
               </li>
             </ul>
           </div>
@@ -168,9 +176,9 @@
           </div>
           <div *ngIf="aiParsed().acoes">
             <h4>Ações Práticas</h4>
-            <ul>
+            <ol class="acoes-praticas-lista">
               <li *ngFor="let item of aiParsed().acoes">{{ item }}</li>
-            </ul>
+            </ol>
           </div>
           <div *ngIf="aiParsed().recursos">
             <h4>Recursos e Redes de Apoio</h4>
@@ -220,12 +228,12 @@
           </div>
           <div *ngIf="aiParsed().plano_smart">
             <h4>Plano de Ação SMART</h4>
-            <ul>
-              <li><b>Específico:</b> {{ aiParsed().plano_smart.especifico }}</li>
-              <li><b>Mensurável:</b> {{ aiParsed().plano_smart.mensuravel }}</li>
-              <li><b>Atingível:</b> {{ aiParsed().plano_smart.atingivel }}</li>
-              <li><b>Relevante:</b> {{ aiParsed().plano_smart.relevante }}</li>
-              <li><b>Temporal:</b> {{ aiParsed().plano_smart.temporal }}</li>
+            <ul class="plano-smart-lista">
+              <li><span class="smart-label">Específico:</span> <span class="smart-texto">{{ aiParsed().plano_smart.especifico }}</span></li>
+              <li><span class="smart-label">Mensurável:</span> <span class="smart-texto">{{ aiParsed().plano_smart.mensuravel }}</span></li>
+              <li><span class="smart-label">Atingível:</span> <span class="smart-texto">{{ aiParsed().plano_smart.atingivel }}</span></li>
+              <li><span class="smart-label">Relevante:</span> <span class="smart-texto">{{ aiParsed().plano_smart.relevante }}</span></li>
+              <li><span class="smart-label">Temporal:</span> <span class="smart-texto">{{ aiParsed().plano_smart.temporal }}</span></li>
             </ul>
           </div>
         </ng-container>

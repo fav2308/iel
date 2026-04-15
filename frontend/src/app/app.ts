@@ -1,3 +1,4 @@
+// Remover export duplicado e garantir que objectKeys está dentro da classe correta
 import {
   ChangeDetectionStrategy,
   Component,
@@ -6,6 +7,7 @@ import {
   computed,
   signal,
 } from '@angular/core';
+import { NgClass, NgIf, NgFor } from '@angular/common';
 import type { jsPDF } from 'jspdf';
 import { environment } from '../environments/environment';
 declare const __app_id: string | undefined;
@@ -51,6 +53,8 @@ function createInitialScores(): ScoreMap {
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: true,
+  imports: [NgClass, NgIf, NgFor],
 })
 export class App {
   @ViewChild('radarChart') private readonly radarChart?: ElementRef<SVGSVGElement>;
@@ -58,6 +62,8 @@ export class App {
   protected readonly categories = CATEGORIES;
   protected readonly menteeName = signal('');
   protected readonly scores = signal<ScoreMap>(createInitialScores());
+  // Removido teste de status
+  constructor() {}
   protected readonly compareScores = signal<ScoreMap | null>(null);
   protected readonly loading = signal(false);
   protected readonly pdfLoading = signal(false);
@@ -116,56 +122,41 @@ export class App {
 
     this.loading.set(true);
 
-    const localAnalysis = this.generateLocalAnalysis();
-    this.aiAnalysis.set(localAnalysis);
+    this.aiAnalysis.set('');
     this.aiTips.set([]);
-    this.status.set({ type: 'info', text: 'Prévia pronta. Refinando o relatório com IA...' });
+    this.status.set({ type: 'info', text: 'Enviando dados para a IA...' });
 
     try {
-      let finalAnalysis = localAnalysis;
-      let usedLocalFallback = false;
-      let fallbackReason = '';
-
-      try {
-        finalAnalysis = await this.generateRemoteAnalysis();
-      } catch (remoteError) {
-        usedLocalFallback = true;
-        fallbackReason = remoteError instanceof Error ? remoteError.message : 'A IA não respondeu a tempo.';
+      // Tenta chamar a IA normalmente
+      const result = await this.generateRemoteAnalysis();
+      const parsed = JSON.parse(result);
+      // Filtra apenas os campos permitidos
+      const filtered: any = {};
+      for (const key of this.allowedFields) {
+        if (parsed[key] !== undefined) filtered[key] = parsed[key];
       }
-
-      this.aiAnalysis.set(finalAnalysis);
-      try {
-        const parsed = JSON.parse(finalAnalysis);
-        // Filtra apenas os campos permitidos
-        const filtered: any = {};
-        for (const key of this.allowedFields) {
-          if (parsed[key] !== undefined) filtered[key] = parsed[key];
-        }
-        this.aiParsed.set(filtered);
-        // Procura campos comuns para dicas/sugestões/ações
-        const tips =
-          filtered.acoes || filtered.dicas || filtered.sugestoes || filtered.sugestao || filtered.tips || [];
-        if (Array.isArray(tips)) {
-          this.aiTips.set(tips.filter((t) => typeof t === 'string' && t.trim().length > 0));
-        } else if (typeof tips === 'string' && tips.trim().length > 0) {
-          this.aiTips.set([tips]);
-        } else {
-          this.aiTips.set([]);
-        }
-      } catch {
+      this.aiParsed.set(filtered);
+      this.aiAnalysis.set(JSON.stringify(filtered, null, 2));
+      // Procura campos comuns para dicas/sugestões/ações
+      const tips =
+        filtered.acoes || filtered.dicas || filtered.sugestoes || filtered.sugestao || filtered.tips || [];
+      if (Array.isArray(tips)) {
+        this.aiTips.set(tips.filter((t) => typeof t === 'string' && t.trim().length > 0));
+      } else if (typeof tips === 'string' && tips.trim().length > 0) {
+        this.aiTips.set([tips]);
+      } else {
         this.aiTips.set([]);
-        this.aiParsed.set(null);
       }
-
-      this.status.set({
-        type: usedLocalFallback ? 'info' : 'success',
-        text: usedLocalFallback
-          ? `Prévia exibida sem demora. Mantive a versão local porque a IA principal não respondeu (${fallbackReason}).`
-          : 'Relatório gerado com sucesso! Clique em "Gerar PDF" para baixar.',
-      });
+      this.status.set({ type: 'success', text: 'Relatório gerado com sucesso! Clique em "Gerar PDF" para baixar.' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao processar análise.';
-      this.status.set({ type: 'error', text: message });
+      // Se a IA estiver fora do ar ou erro de rede, apenas avisa a usuária
+      this.aiAnalysis.set('');
+      this.aiParsed.set(null);
+      this.aiTips.set([]);
+      this.status.set({
+        type: 'error',
+        text: 'Não foi possível realizar o exame porque a inteligência artificial está fora do ar. Tente novamente mais tarde.',
+      });
     } finally {
       this.loading.set(false);
     }
@@ -197,7 +188,7 @@ export class App {
   }
 
   protected async exportPdf(): Promise<void> {
-    if (!this.aiAnalysis().trim()) {
+    if (!this.aiParsed()) {
       this.status.set({ type: 'error', text: 'Gere o parecer antes de exportar o PDF.' });
       return;
     }
@@ -217,13 +208,13 @@ export class App {
       documentPdf.setFont('helvetica', 'normal');
       documentPdf.setFontSize(10);
       documentPdf.text(`Data: ${now.toLocaleDateString('pt-BR')}`, 14, 24);
-      documentPdf.text(`Media global: ${this.average()}/10`, 14, 29);
+      documentPdf.text(`Média global: ${this.average()}/10`, 14, 29);
 
       const radarImage = await this.createRadarImage();
       if (radarImage) {
         documentPdf.setFont('helvetica', 'bold');
         documentPdf.setFontSize(12);
-        documentPdf.text('Grafico Radar', 14, 38);
+        documentPdf.text('Gráfico Radar', 14, 38);
         documentPdf.addImage(radarImage, 'PNG', 14, 42, 85, 85);
       }
 
@@ -236,8 +227,75 @@ export class App {
 
       documentPdf.setFont('helvetica', 'normal');
       documentPdf.setFontSize(10);
-      const wrappedAnalysis = documentPdf.splitTextToSize(this.aiAnalysis(), 182);
-      documentPdf.text(wrappedAnalysis, 14, analysisStartY + 6);
+      let y = analysisStartY + 6;
+      const analysis = this.aiParsed();
+
+      // Anamnese
+      if (analysis.anamnese) {
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(11);
+        documentPdf.text('Anamnese:', 14, y);
+        y += 7;
+        documentPdf.setFont('helvetica', 'normal');
+        documentPdf.setFontSize(10);
+        // Divide a anamnese em frases usando pontuação como delimitador
+        const frases = analysis.anamnese.split(/(?<=[.!?])\s+/);
+        for (const frase of frases) {
+          const wrapped = documentPdf.splitTextToSize(frase.trim(), 182);
+          documentPdf.text(wrapped, 14, y);
+          y += 6 * wrapped.length;
+        }
+        y += 2;
+      }
+
+      // Média Global
+      if (analysis.media_global) {
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(11);
+        documentPdf.text('Média Global:', 14, y);
+        documentPdf.setFont('helvetica', 'normal');
+        documentPdf.setFontSize(10);
+        documentPdf.text(`${analysis.media_global}/10`, 50, y);
+        y += 8;
+      }
+
+      // Principal Alavanca
+      if (analysis.principal_alavanca) {
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(11);
+        documentPdf.text('Principal Alavanca:', 14, y);
+        documentPdf.setFont('helvetica', 'normal');
+        documentPdf.setFontSize(10);
+        documentPdf.text(analysis.principal_alavanca, 60, y);
+        y += 8;
+      }
+
+      // Ponto Forte
+      if (analysis.ponto_forte) {
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(11);
+        documentPdf.text('Ponto Forte:', 14, y);
+        documentPdf.setFont('helvetica', 'normal');
+        documentPdf.setFontSize(10);
+        documentPdf.text(analysis.ponto_forte, 50, y);
+        y += 8;
+      }
+
+      // Plano de Ação
+      if (analysis.plano_acao && Array.isArray(analysis.plano_acao)) {
+        y += 2;
+        documentPdf.setFont('helvetica', 'bold');
+        documentPdf.setFontSize(11);
+        documentPdf.text('Plano de Ação:', 14, y);
+        y += 7;
+        documentPdf.setFont('helvetica', 'normal');
+        documentPdf.setFontSize(10);
+        analysis.plano_acao.forEach((acao: string, idx: number) => {
+          const wrapped = documentPdf.splitTextToSize(`${idx + 1}. ${acao}`, 170);
+          documentPdf.text(wrapped, 18, y);
+          y += 6 * wrapped.length;
+        });
+      }
 
       const fileDate = now.toISOString().slice(0, 10);
       const safeName = (this.menteeName() || 'mentorada')
@@ -253,6 +311,32 @@ export class App {
     } finally {
       this.pdfLoading.set(false);
     }
+  }
+
+  private formatAnalysisLinesForPdf(analysis: any): string[] {
+    const lines: string[] = [];
+    if (analysis.anamnese) {
+      lines.push('Anamnese:');
+      lines.push(analysis.anamnese);
+      lines.push('');
+    }
+    if (analysis.media_global) {
+      lines.push(`Média Global: ${analysis.media_global}/10`);
+    }
+    if (analysis.principal_alavanca) {
+      lines.push(`Principal Alavanca: ${analysis.principal_alavanca}`);
+    }
+    if (analysis.ponto_forte) {
+      lines.push(`Ponto Forte: ${analysis.ponto_forte}`);
+    }
+    if (analysis.plano_acao && Array.isArray(analysis.plano_acao)) {
+      lines.push('');
+      lines.push('Plano de Ação:');
+      analysis.plano_acao.forEach((acao: string, idx: number) => {
+        lines.push(`  ${idx + 1}. ${acao}`);
+      });
+    }
+    return lines;
   }
 
   protected getPoints(data: ScoreMap | null): string {
@@ -352,20 +436,26 @@ export class App {
     return analysis;
   }
 
-  private parseBackendResponse(responseText: string): { analysis?: string; message?: string; details?: unknown } {
+  private parseBackendResponse(responseText: string): any {
     if (!responseText.trim()) {
       return {};
     }
 
     try {
-      return JSON.parse(responseText) as { analysis?: string; message?: string; details?: unknown };
+      return JSON.parse(responseText);
     } catch {
       return { message: responseText };
     }
   }
 
 
-  private drawScoreBars(documentPdf: jsPDF, originX: number, originY: number, width: number, height: number): void {
+  private drawScoreBars(
+    documentPdf: any,
+    originX: number,
+    originY: number,
+    width: number,
+    height: number
+  ): void {
     const scores = this.scores();
     const maxScore = 10;
     const maxBarWidth = width - 28;
@@ -390,8 +480,8 @@ export class App {
       documentPdf.setFillColor(241, 245, 249);
       documentPdf.roundedRect(originX + 24, lineY - 1, maxBarWidth, 4, 1, 1, 'FD');
 
-      const [r, g, b] = this.hexToRgb(category.color);
-      documentPdf.setFillColor(r, g, b);
+      const rgb = this.hexToRgb(category.color);
+      documentPdf.setFillColor(rgb.r, rgb.g, rgb.b);
       documentPdf.roundedRect(originX + 24, lineY - 1, barWidth, 4, 1, 1, 'F');
 
       documentPdf.setFontSize(8);
@@ -399,10 +489,10 @@ export class App {
     });
   }
 
-  private async createRadarImage(): Promise<string | null> {
+  private async createRadarImage(): Promise<string | undefined> {
     const svgElement = this.radarChart?.nativeElement;
     if (!svgElement) {
-      return null;
+      return undefined;
     }
 
     const viewBox = svgElement.viewBox.baseVal;
@@ -421,7 +511,7 @@ export class App {
 
       const context = canvas.getContext('2d');
       if (!context) {
-        return null;
+        return undefined;
       }
 
       context.fillStyle = '#ffffff';
@@ -443,25 +533,30 @@ export class App {
     });
   }
 
-  private hexToRgb(hexColor: string): [number, number, number] {
+  private hexToRgb(hexColor: string): { r: number; g: number; b: number } {
     const normalized = hexColor.replace('#', '');
     const isShortHex = normalized.length === 3;
     const fullHex = isShortHex
       ? normalized
         .split('')
-        .map((character) => `${character}${character}`)
+        .map((character: string) => `${character}${character}`)
         .join('')
       : normalized;
 
     const value = Number.parseInt(fullHex, 16);
     if (Number.isNaN(value)) {
-      return [79, 70, 229];
+      // Cor padrão (roxinho)
+      return { r: 79, g: 70, b: 229 };
     }
 
-    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+    return {
+      r: (value >> 16) & 255,
+      g: (value >> 8) & 255,
+      b: value & 255,
+    };
   }
 
-  private generateLocalAnalysis(): string {
+  private generateLocalAnalysisJson() {
     const scores = this.scores();
     const ordered = [...this.categories].sort((firstCategory, secondCategory) => {
       return (scores[firstCategory.id] ?? 0) - (scores[secondCategory.id] ?? 0);
@@ -473,24 +568,32 @@ export class App {
     const strongestScore = strongest ? scores[strongest.id] ?? 0 : 0;
     const average = this.average();
 
-    return [
-      `Diagnóstico Estratégico (modo local) — ${this.menteeName()}`,
-      `Média global atual: ${average}/10.`,
-      weakest
-        ? `Principal alavanca de crescimento: ${weakest.label} (${weakestScore}/10). Priorize ações de curto prazo nesta frente nos próximos 14 dias.`
-        : 'Principal alavanca de crescimento: definir foco prioritário para os próximos 14 dias.',
-      strongest
-        ? `Ponto de força para tracionar resultados: ${strongest.label} (${strongestScore}/10). Use esta área como motor para acelerar as demais.`
-        : 'Ponto de força: consolidar uma área com desempenho acima da média para gerar tração.',
-      'Plano de ação recomendado:',
-      `1) Definir uma meta objetiva para ${weakest?.label ?? 'a alavanca principal'} com indicador semanal.`,
-      '2) Executar um sprint de 2 semanas com rotina de revisão diária (15 minutos).',
-      '3) Revisar evolução dos 8 pilares e recalibrar prioridades ao final do ciclo.',
-    ].join('\n\n');
+    // Gera anamnese local simples
+    const anamnese = `Esta anamnese foi gerada localmente, sem IA. A mentorada ${this.menteeName()} apresenta média global de ${average}/10. O principal ponto de atenção é "${weakest.label}" (${weakestScore}/10), enquanto o maior ponto forte é "${strongest.label}" (${strongestScore}/10). Recomenda-se priorizar ações de curto prazo na área de menor nota e usar o ponto forte como alavanca para o desenvolvimento.`;
+
+    return {
+      anamnese,
+      media_global: average,
+      principal_alavanca: weakest
+        ? `${weakest.label} (${weakestScore}/10)`
+        : 'Definir foco prioritário para os próximos 14 dias.',
+      ponto_forte: strongest
+        ? `${strongest.label} (${strongestScore}/10)`
+        : 'Consolidar uma área com desempenho acima da média para gerar tração.',
+      plano_acao: [
+        `Definir uma meta objetiva para ${weakest?.label ?? 'a alavanca principal'} com indicador semanal.`,
+        'Executar um sprint de 2 semanas com rotina de revisão diária (15 minutos).',
+        'Revisar evolução dos 8 pilares e recalibrar prioridades ao final do ciclo.'
+      ]
+    };
   }
 
-  private readRuntimeString(key: '__app_id'): string {
-    const runtimeValue = (globalThis as Record<string, unknown>)[key];
+  private readRuntimeString(key: string): string | undefined {
+    const runtimeValue = (globalThis as any)[key];
     return typeof runtimeValue === 'string' ? runtimeValue : '';
+  }
+
+  public objectKeys(obj: object): string[] {
+    return obj ? Object.keys(obj) : [];
   }
 }
