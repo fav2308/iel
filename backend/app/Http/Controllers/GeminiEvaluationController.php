@@ -29,8 +29,6 @@ class GeminiEvaluationController extends Controller
      */
     private array $models = [
         'gemini-2.5-flash',
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
     ];
 
     public function __invoke(Request $request): JsonResponse
@@ -64,14 +62,10 @@ class GeminiEvaluationController extends Controller
         }
 
         $lastError = 'Sem detalhes';
-        $requestBuilder = Http::timeout(20)->acceptJson();
-
-        if (app()->environment('local')) {
-            $requestBuilder = $requestBuilder->withOptions([
-                // Desenvolvimento local no Windows sem cadeia CA configurada.
-                'verify' => false,
-            ]);
-        }
+        $requestBuilder = Http::timeout(20)->acceptJson()->withOptions([
+            // Força ignorar SSL para todos os ambientes (apenas para desenvolvimento/teste).
+            'verify' => false,
+        ]);
 
         foreach ($this->models as $model) {
             try {
@@ -186,16 +180,27 @@ class GeminiEvaluationController extends Controller
             'Tarefa: interpretar as notas da Roda da Vida com base exclusivamente na rubrica carregada.',
             'Scores informados: ' . json_encode($normalizedScores, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Objetivo:',
+            '- realizar uma anamnese detalhada, levantando possíveis causas, histórico e contexto para os resultados apresentados',
+            '- comentar individualmente cada pilar, destacando pontos fortes e pontos de atenção',
             '- identificar a principal Area Alavanca',
-            '- explicar o impacto sistemico da area prioritaria',
-            '- sugerir oportunidades de promocao',
-            '- sugerir de 1 a 3 acoes praticas imediatas',
-            'Regras obrigatorias:',
-            '- usar exclusivamente a rubrica recebida no systemInstruction',
-            '- nao inventar criterios ou areas fora da rubrica',
-            '- responder apenas com JSON valido',
-            '- nao usar Markdown',
-            '- nao escrever texto antes ou depois do JSON',
+            '- explicar o impacto sistêmico da área prioritária',
+            '- sugerir oportunidades de promoção e desenvolvimento',
+            '- sugerir de 1 a 3 ações práticas imediatas, com dicas concretas e exemplos aplicáveis à realidade da mentorada',
+            '- indicar recursos, cursos gratuitos, redes de apoio, comunidades e eventos voltados para mulheres empreendedoras',
+            '- sugerir temas para próximas sessões de mentoria e perguntas de reflexão',
+            '- trazer uma história inspiradora de mulher empreendedora que superou desafios semelhantes',
+            '- gerar um checklist prático de próximos passos',
+            '- incluir alertas de autoconfiança, bem-estar e valorização das conquistas',
+            '- sugerir ações de networking e grupos/setores para conexão',
+            '- destacar as áreas em que a mentorada já se destaca, reforçando autoestima e potencial',
+            '- propor um plano de ação SMART (específico, mensurável, alcançável, relevante e com prazo)',
+            'Regras obrigatórias:',
+            '- usar exclusivamente a rubrica recebida no systemInstruction para análise dos pilares',
+            '- para dicas, sugestões, recursos e histórias, pode buscar inspiração livremente no conhecimento do Gemini, sempre considerando o contexto da mentorada',
+            '- não inventar critérios ou áreas fora da rubrica para a análise principal',
+            '- responder apenas com JSON válido, estruturando cada item em campos separados',
+            '- não usar Markdown',
+            '- não escrever texto antes ou depois do JSON',
         ]);
     }
 }

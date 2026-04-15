@@ -139,7 +139,97 @@
             </div>
           }
         </div>
-        <p>
+        <ng-container *ngIf="aiParsed()">
+          <div *ngIf="aiParsed().anamnese">
+            <h4>Anamnese</h4>
+            <p>{{ aiParsed().anamnese }}</p>
+          </div>
+          <div *ngIf="aiParsed().comentarios_pilares">
+            <h4>Comentários por Pilar</h4>
+            <ul>
+              <li *ngFor="let key of Object.keys(aiParsed().comentarios_pilares)">
+                <b>{{ key }}:</b> {{ aiParsed().comentarios_pilares[key] }}
+              </li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().area_alavanca">
+            <h4>Área Alavanca</h4>
+            <p>{{ aiParsed().area_alavanca }}</p>
+          </div>
+          <div *ngIf="aiParsed().impacto_sistemico">
+            <h4>Impacto Sistêmico</h4>
+            <p>{{ aiParsed().impacto_sistemico }}</p>
+          </div>
+          <div *ngIf="aiParsed().oportunidades">
+            <h4>Oportunidades</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().oportunidades">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().acoes">
+            <h4>Ações Práticas</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().acoes">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().recursos">
+            <h4>Recursos e Redes de Apoio</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().recursos"><a [href]="item" target="_blank">{{ item }}</a></li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().temas_proximas_sessoes">
+            <h4>Temas para Próximas Sessões</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().temas_proximas_sessoes">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().perguntas_reflexao">
+            <h4>Perguntas de Reflexão</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().perguntas_reflexao">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().historia_inspiradora">
+            <h4>História Inspiradora</h4>
+            <p>{{ aiParsed().historia_inspiradora }}</p>
+          </div>
+          <div *ngIf="aiParsed().checklist">
+            <h4>Checklist de Próximos Passos</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().checklist">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().alertas_bem_estar">
+            <h4>Alertas de Bem-Estar</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().alertas_bem_estar">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().networking">
+            <h4>Networking</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().networking">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().pontos_fortes">
+            <h4>Pontos Fortes</h4>
+            <ul>
+              <li *ngFor="let item of aiParsed().pontos_fortes">{{ item }}</li>
+            </ul>
+          </div>
+          <div *ngIf="aiParsed().plano_smart">
+            <h4>Plano de Ação SMART</h4>
+            <ul>
+              <li><b>Específico:</b> {{ aiParsed().plano_smart.especifico }}</li>
+              <li><b>Mensurável:</b> {{ aiParsed().plano_smart.mensuravel }}</li>
+              <li><b>Atingível:</b> {{ aiParsed().plano_smart.atingivel }}</li>
+              <li><b>Relevante:</b> {{ aiParsed().plano_smart.relevante }}</li>
+              <li><b>Temporal:</b> {{ aiParsed().plano_smart.temporal }}</li>
+            </ul>
+          </div>
+        </ng-container>
+        <p *ngIf="!aiParsed()">
           {{ aiAnalysis() || 'Insira os dados para gerar a análise estratégica.' }}
         </p>
       </div>

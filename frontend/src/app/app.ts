@@ -62,6 +62,26 @@ export class App {
   protected readonly loading = signal(false);
   protected readonly pdfLoading = signal(false);
   protected readonly aiAnalysis = signal('');
+  protected readonly aiTips = signal<string[]>([]);
+  protected readonly aiParsed = signal<any>(null);
+  // Lista de campos permitidos para exibição
+  private readonly allowedFields = [
+    'anamnese',
+    'comentarios_pilares',
+    'area_alavanca',
+    'impacto_sistemico',
+    'oportunidades',
+    'acoes',
+    'recursos',
+    'temas_proximas_sessoes',
+    'perguntas_reflexao',
+    'historia_inspiradora',
+    'checklist',
+    'alertas_bem_estar',
+    'networking',
+    'pontos_fortes',
+    'plano_smart',
+  ];
   protected readonly status = signal<StatusMessage>({ type: '', text: '' });
   protected readonly average = computed(() => {
     const values = Object.values(this.scores());
@@ -98,6 +118,7 @@ export class App {
 
     const localAnalysis = this.generateLocalAnalysis();
     this.aiAnalysis.set(localAnalysis);
+    this.aiTips.set([]);
     this.status.set({ type: 'info', text: 'Prévia pronta. Refinando o relatório com IA...' });
 
     try {
@@ -113,6 +134,28 @@ export class App {
       }
 
       this.aiAnalysis.set(finalAnalysis);
+      try {
+        const parsed = JSON.parse(finalAnalysis);
+        // Filtra apenas os campos permitidos
+        const filtered: any = {};
+        for (const key of this.allowedFields) {
+          if (parsed[key] !== undefined) filtered[key] = parsed[key];
+        }
+        this.aiParsed.set(filtered);
+        // Procura campos comuns para dicas/sugestões/ações
+        const tips =
+          filtered.acoes || filtered.dicas || filtered.sugestoes || filtered.sugestao || filtered.tips || [];
+        if (Array.isArray(tips)) {
+          this.aiTips.set(tips.filter((t) => typeof t === 'string' && t.trim().length > 0));
+        } else if (typeof tips === 'string' && tips.trim().length > 0) {
+          this.aiTips.set([tips]);
+        } else {
+          this.aiTips.set([]);
+        }
+      } catch {
+        this.aiTips.set([]);
+        this.aiParsed.set(null);
+      }
 
       this.status.set({
         type: usedLocalFallback ? 'info' : 'success',
@@ -132,6 +175,8 @@ export class App {
     this.scores.set(createInitialScores());
     this.compareScores.set(null);
     this.aiAnalysis.set('');
+    this.aiTips.set([]);
+    this.aiParsed.set(null);
     this.menteeName.set('');
     this.status.set({ type: '', text: '' });
   }

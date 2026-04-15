@@ -1,0 +1,70 @@
+# Laravel
+/vendor/
+/node_modules/
+/public/storage
+/storage/*.key
+.env
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+npm-debug.log
+.yarn-error.log
+
+# Angular
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.angular/
+/frontend/.vscode/
+/frontend/.env
+/frontend/.env.*
+
+# IDEs e SO
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.idea/
+*.vscode/
+*.history/
+
+# Logs
+*.log
+/storage/logs/
+
+# Outros
+*.local
+*.cache
+*.tmp
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+
+# Testes
+/coverage/
+
+# Build
+/build/
+/dist/
+
+# PyCharm
+/.idea/
+
+# VSCode
+/.vscode/
+
+# Windows
+*.lnk
+
+# Mac
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
