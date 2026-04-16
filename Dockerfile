@@ -17,6 +17,12 @@ RUN apt-get update && apt-get install -y \
 
 RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd pdo_sqlite pdo_pgsql pgsql
 
+# Fix Nginx runtime directories
+RUN mkdir -p /var/run/nginx && \
+    touch /var/run/nginx.pid && \
+    mkdir -p /var/log/nginx && \
+    chown -R www-data:www-data /var/run/nginx /var/log/nginx
+
 # Instala Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
