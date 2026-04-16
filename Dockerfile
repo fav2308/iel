@@ -49,5 +49,6 @@ COPY backend/docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 RUN echo '[supervisord]\nnodaemon=true\n[program:php-fpm]\ncommand=php-fpm\n[program:nginx]\ncommand=nginx -g \"daemon off;\"' > /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 80
+EXPOSE 8080
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
