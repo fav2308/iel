@@ -1,17 +1,16 @@
-# Dockerfile otimizado para Laravel no Render.com
 FROM php:8.3-fpm
 
 RUN apt-get update && apt-get install -y \
-	git \
-	curl \
-	libpng-dev \
-	libonig-dev \
-	libxml2-dev \
-	zip \
-	unzip \
-	sqlite3 \
-	libsqlite3-dev \
-	libpq-dev
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    unzip \
+    sqlite3 \
+    libsqlite3-dev \
+    libpq-dev
 
 RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd pdo_sqlite pdo_pgsql pgsql
 
@@ -23,7 +22,7 @@ COPY backend/cacert.pem /usr/local/share/ca-certificates/cacert.pem
 
 # Configura o PHP para usar o cacert.pem
 RUN echo 'curl.cainfo="/usr/local/share/ca-certificates/cacert.pem"' >> /usr/local/etc/php/conf.d/cacert.ini \
-	&& echo 'openssl.cafile="/usr/local/share/ca-certificates/cacert.pem"' >> /usr/local/etc/php/conf.d/cacert.ini
+    && echo 'openssl.cafile="/usr/local/share/ca-certificates/cacert.pem"' >> /usr/local/etc/php/conf.d/cacert.ini
 
 WORKDIR /var/www
 
@@ -38,16 +37,7 @@ RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
 EXPOSE 8000
 
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
-FROM php:8.3-fpm
-
-
-# Instala dependências do sistema
-RUN apt-get update \
-	&& apt-get install -y libpq-dev git unzip curl \
-	&& docker-php-ext-install pdo pdo_pgsql pgsql
-
-# Copia o cacert.pem para o container
+CMD ["php-fpm"]
 COPY backend/cacert.pem /usr/local/share/ca-certificates/cacert.pem
 
 # Configura o PHP para usar o cacert.pem
