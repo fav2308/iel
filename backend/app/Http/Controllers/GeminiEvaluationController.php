@@ -63,9 +63,7 @@ class GeminiEvaluationController extends Controller
 
         $lastError = 'Sem detalhes';
         // Força o uso do cacert.pem específico para validação SSL
-        $requestBuilder = Http::timeout(20)->acceptJson()->withOptions([
-            'verify' => base_path('cacert.pem'),
-        ]);
+        $requestBuilder = Http::timeout(20)->acceptJson();
 
         foreach ($this->models as $model) {
             try {

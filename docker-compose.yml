@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    container_name: laravel-app
+    working_dir: /var/www
+    volumes:
+      - ./backend:/var/www
+    ports:
+      - "9000:9000"
+    depends_on:
+      - db
+    environment:
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=iel
+      - DB_USERNAME=ieluser
+      - DB_PASSWORD=ielpass
+  db:
+    image: postgres:16
+    container_name: pgsql-db
+    restart: always
+    environment:
+      POSTGRES_DB: iel
+      POSTGRES_USER: ieluser
+      POSTGRES_PASSWORD: ielpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
