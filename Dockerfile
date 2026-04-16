@@ -12,16 +12,14 @@ RUN apt-get update && apt-get install -y \
     unzip \
     sqlite3 \
     libsqlite3-dev \
-    libpq-dev \
-    supervisor
+    libpq-dev
 
 RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd pdo_sqlite pdo_pgsql pgsql
 
-# Fix Nginx runtime directories
-RUN mkdir -p /var/run/nginx && \
-    touch /var/run/nginx.pid && \
-    mkdir -p /var/log/nginx && \
-    chown -R www-data:www-data /var/run/nginx /var/log/nginx
+# Corrige diretórios do Nginx (não cria o arquivo PID no build)
+RUN mkdir -p /var/run/nginx \
+    && mkdir -p /var/log/nginx \
+    && chown -R www-data:www-data /var/run/nginx /var/log/nginx
 
 # Instala Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
@@ -48,11 +46,21 @@ COPY backend/docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 # Testa a configuração do Nginx durante o build
 RUN nginx -t
 
-# Configuração do Supervisor para rodar Nginx e PHP-FPM juntos
-RUN echo '[supervisord]\nnodaemon=true\n[program:php-fpm]\ncommand=php-fpm\n[program:nginx]\ncommand=nginx -g \"daemon off;\"' > /etc/supervisor/conf.d/supervisord.conf
+
+nodaemon=true
+
+[program:php-fpm]
+command=php-fpm
+
+[program:nginx]
+command=nginx -g "daemon off;"
+
+# Entrypoint para rodar php-fpm e nginx juntos e garantir que o PID não cause problemas
+COPY backend/docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
 EXPOSE 8080
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+ENTRYPOINT ["/entrypoint.sh"]
 # force rebuild
