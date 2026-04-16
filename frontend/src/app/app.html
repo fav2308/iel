@@ -171,53 +171,53 @@
           <div *ngIf="aiParsed().oportunidades">
             <h4>Oportunidades</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().oportunidades">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().oportunidades">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().acoes">
             <h4>Ações Práticas</h4>
             <ol class="acoes-praticas-lista">
-              <li *ngFor="let item of aiParsed().acoes">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().acoes">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ol>
           </div>
           <div *ngIf="aiParsed().recursos">
             <h4>Recursos e Redes de Apoio</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().recursos"><a [href]="item" target="_blank">{{ item }}</a></li>
+              <li *ngFor="let item of aiParsed().recursos"><a [href]="typeof item === 'string' ? item : ''" target="_blank">{{ (typeof item === 'string' ? item : (item | json)) }}</a></li>
             </ul>
           </div>
           <div *ngIf="aiParsed().temas_proximas_sessoes">
             <h4>Temas para Próximas Sessões</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().temas_proximas_sessoes">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().temas_proximas_sessoes">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().perguntas_reflexao">
             <h4>Perguntas de Reflexão</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().perguntas_reflexao">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().perguntas_reflexao">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().historia_inspiradora">
             <h4>História Inspiradora</h4>
-            <p>{{ aiParsed().historia_inspiradora }}</p>
+            <p>{{ (typeof aiParsed().historia_inspiradora === 'string' ? aiParsed().historia_inspiradora : (aiParsed().historia_inspiradora | json)) }}</p>
           </div>
           <div *ngIf="aiParsed().checklist">
             <h4>Checklist de Próximos Passos</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().checklist">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().checklist">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().alertas_bem_estar">
             <h4>Alertas de Bem-Estar</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().alertas_bem_estar">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().alertas_bem_estar">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().networking">
             <h4>Networking</h4>
             <ul>
-              <li *ngFor="let item of aiParsed().networking">{{ item }}</li>
+              <li *ngFor="let item of aiParsed().networking">{{ (typeof item === 'string' ? item : (item | json)) }}</li>
             </ul>
           </div>
           <div *ngIf="aiParsed().pontos_fortes">

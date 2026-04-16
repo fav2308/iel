@@ -7,7 +7,7 @@ import {
   computed,
   signal,
 } from '@angular/core';
-import { NgClass, NgIf, NgFor } from '@angular/common';
+import { NgClass, NgIf, NgFor, JsonPipe } from '@angular/common';
 import type { jsPDF } from 'jspdf';
 import { environment } from '../environments/environment';
 declare const __app_id: string | undefined;
@@ -54,7 +54,7 @@ function createInitialScores(): ScoreMap {
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
-  imports: [NgClass, NgIf, NgFor],
+  imports: [NgClass, NgIf, NgFor, JsonPipe],
 })
 export class App {
   @ViewChild('radarChart') private readonly radarChart?: ElementRef<SVGSVGElement>;
