@@ -42,8 +42,11 @@ RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 RUN php artisan key:generate || true
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
+
 # Configuração do Nginx para servir Laravel
 COPY backend/docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+# Testa a configuração do Nginx durante o build
+RUN nginx -t
 
 # Configuração do Supervisor para rodar Nginx e PHP-FPM juntos
 RUN echo '[supervisord]\nnodaemon=true\n[program:php-fpm]\ncommand=php-fpm\n[program:nginx]\ncommand=nginx -g \"daemon off;\"' > /etc/supervisor/conf.d/supervisord.conf
@@ -52,3 +55,4 @@ EXPOSE 80
 EXPOSE 8080
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# force rebuild
